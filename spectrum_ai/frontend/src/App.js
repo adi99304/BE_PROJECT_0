@@ -125,13 +125,71 @@ function App() {
           />
         )}
 
-        {activeTab === "Policy" && (
+        {/* {activeTab === "Policy" && (
           <div style={styles.comingSoon}>
             <div style={styles.comingSoonIcon}>📋</div>
             <h2 style={styles.comingSoonTitle}>Policy Management</h2>
             <p style={styles.comingSoonText}>This feature is coming soon</p>
           </div>
-        )}
+        )} */}
+
+        {activeTab === "Policy" && (
+  <div>
+    <h2 style={styles.title}>Policy Guardian Insights</h2>
+    <p style={styles.subtitle}>
+      RAG-based regulatory validation from TRAI & NFAP documents
+    </p>
+
+    {!data && (
+      <p>Run allocation first to view policy compliance.</p>
+    )}
+
+    {data && (
+      <table style={styles.table}>
+        <thead>
+          <tr style={styles.tableHeaderRow}>
+            <th style={styles.tableHeader}>State</th>
+            <th style={styles.tableHeader}>Final MHz</th>
+            <th style={styles.tableHeader}>Policy Cap</th>
+            <th style={styles.tableHeader}>Status</th>
+            <th style={styles.tableHeader}>Allocation Reason</th>
+            <th style={styles.tableHeader}>Policy Reason</th>
+
+          </tr>
+        </thead>
+
+        <tbody>
+          {Object.entries(data).map(([state, v]) => (
+            <tr key={state} style={styles.tableRow}>
+              <td style={styles.tableCell}>{state}</td>
+              <td style={styles.tableCell}>{v.final.toFixed(2)}</td>
+              <td style={styles.tableCell}>{v.policy_cap}</td>
+
+              <td style={styles.tableCell}>
+                <span style={{
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  fontWeight: 700,
+                  color: v.policy_status === "CAPPED" ? "#dc2626" : "#16a34a",
+                  background: v.policy_status === "CAPPED"
+                    ? "#fee2e2"
+                    : "#dcfce7"
+                }}>
+                  {v.policy_status}
+                </span>
+              </td>
+<td title={v.allocation_reason}>View</td>
+<td title={v.policy_reason}>View</td>
+
+
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+)}
+
 
         {activeTab === "Settings" && (
           <div style={styles.comingSoon}>

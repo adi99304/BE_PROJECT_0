@@ -10,3 +10,7 @@ sentence-transformers
 pypdf
 requests
 openai
+faiss-cpu
+sentence-transformers
+pypdf
+requests
