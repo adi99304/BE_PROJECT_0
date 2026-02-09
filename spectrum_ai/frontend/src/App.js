@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
-import { Bar, Doughnut } from "react-chartjs-2";
+import { Bar, Doughnut, Line } from "react-chartjs-2";
 import Plot from 'react-plotly.js';
 import {
   Chart as ChartJS,
@@ -8,18 +8,46 @@ import {
   LinearScale,
   BarElement,
   ArcElement,
+  PointElement,
+  LineElement,
   Tooltip,
   Legend
 } from "chart.js";
+
+// import {
+//   Chart as ChartJS,
+//   CategoryScale,
+//   LinearScale,
+//   BarElement,
+//   ArcElement,
+//   Tooltip,
+//   Legend
+// } from "chart.js";
+
+// ChartJS.register(
+//   CategoryScale,
+//   LinearScale,
+//   BarElement,
+//   ArcElement,
+//   Tooltip,
+//   Legend
+// );
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
   BarElement,
   ArcElement,
+  PointElement,
+  LineElement,
   Tooltip,
   Legend
 );
+
+// ChartJS.defaults.maintainAspectRatio = false;
+// ChartJS.defaults.responsive = true;
+
+
 
 function App() {
   const [data, setData] = useState(null);
@@ -170,7 +198,8 @@ function App() {
                   padding: "4px 10px",
                   borderRadius: 6,
                   fontWeight: 700,
-                  color: v.policy_status === "CAPPED" ? "#dc2626" : "#16a34a",
+                  color: v.policy_status === "CAPPED"  ? "#dc2626" : "#16a34a",
+                  color: v.policy_status === "SOFT-CAPPED"  ? "#dc2626" : "#16a34a",
                   background: v.policy_status === "CAPPED"
                     ? "#fee2e2"
                     : "#dcfce7"
@@ -615,21 +644,91 @@ function AllocationView({ data, loading, runAllocation }) {
   );
 }
 
-// Dashboard and other components remain the same as before
+
 function DashboardView({
   data, loading, runAllocation, total, allocatedPercent,
   allocatedSpectrum, availableSpectrum, availablePercent,
   utilizationData, chartData, topRegionsData, TOTAL_SPECTRUM
 }) {
+
+  // ===============================
+  // Extra Visualization Datasets
+  // ===============================
+
+  const beforeAfterData = data ? {
+    labels: Object.keys(data),
+    datasets: [
+      {
+        label: "Initial (MHz)",
+        backgroundColor: "#94a3b8",
+        data: Object.values(data).map(v => v.initial)
+      },
+      {
+        label: "Final (MHz)",
+        backgroundColor: "#6366f1",
+        data: Object.values(data).map(v => v.final)
+      }
+    ]
+  } : null;
+
+  const cumulativeData = data ? {
+    labels: Object.keys(data),
+    datasets: [{
+      label: "Cumulative Spectrum Usage (MHz)",
+      borderColor: "#22c55e",
+      tension: 0.3,
+      fill: false,
+      data: Object.values(data)
+        .map(v => v.final)
+        .reduce((arr, x, i) => {
+          arr.push((arr[i - 1] || 0) + x);
+          return arr;
+        }, [])
+    }]
+  } : null;
+
+  const top10Data = data ? {
+    labels: Object.entries(data)
+      .sort((a,b)=>b[1].final-a[1].final)
+      .slice(0,10)
+      .map(([k])=>k),
+    datasets:[{
+      label:"Top 10 States (MHz)",
+      backgroundColor:"#f59e0b",
+      data:Object.entries(data)
+        .sort((a,b)=>b[1].final-a[1].final)
+        .slice(0,10)
+        .map(([,v])=>v.final)
+    }]
+  }: null;
+
+  const bandData = data ? {
+    labels:["Sub-6 GHz","mmWave","THz"],
+    datasets:[{
+      backgroundColor:["#6366f1","#22d3ee","#ec4899"],
+      data:[
+        allocatedSpectrum*0.5,
+        allocatedSpectrum*0.3,
+        allocatedSpectrum*0.2
+      ]
+    }]
+  }: null;
+
+  // ===============================
+  // UI
+  // ===============================
+
   return (
     <>
+      {/* HEADER */}
       <div style={styles.header}>
         <div>
           <h2 style={styles.title}>Spectrum Allocation Dashboard</h2>
           <p style={styles.subtitle}>Real-time monitoring and analytics</p>
         </div>
-        <button 
-          style={{...styles.button, opacity: loading ? 0.6 : 1}} 
+
+        <button
+          style={{...styles.button, opacity: loading ? 0.6 : 1}}
           onClick={runAllocation}
           disabled={loading}
         >
@@ -637,137 +736,344 @@ function DashboardView({
         </button>
       </div>
 
+      {/* KPI CARDS */}
       <div style={styles.cards}>
         <Card title="Total Spectrum" value={`${total} MHz`} percentage="+12.5%" icon="∿" iconColor="#6366f1" />
         <Card title="Regions" value={data ? Object.keys(data).length : "-"} percentage="+3" icon="◈" iconColor="#8b5cf6" />
-        <Card title="Efficiency" value={data ? `${allocatedPercent}%` : "-"} percentage={data ? `${allocatedSpectrum.toFixed(0)} MHz` : "-"} icon="✦" iconColor="#10b981" />
+        <Card title="Efficiency" value={data ? `${allocatedPercent}%` : "-"} percentage={`${allocatedSpectrum.toFixed(0)} MHz`} icon="✦" iconColor="#10b981" />
         <Card title="Policy Status" value="Compliant" percentage="100%" icon="⚡" iconColor="#f59e0b" />
       </div>
 
-      <div style={styles.chartsRow}>
-        <div style={styles.chartBoxLarge}>
-          <div style={styles.chartHeader}>
-            <h3 style={styles.chartTitle}>Allocation Results</h3>
-            <span style={styles.badge}>{data ? `${Object.keys(data).length} Regions` : "No Data"}</span>
+      {/* EXISTING CHARTS */}
+      {/* <div style={styles.chartsRow}> */}
+        {/* {chartData && (
+          <div style={styles.chartBoxLarge}>
+            <h3 style={styles.chartTitle}>Regional Allocation</h3>
+            <Bar data={chartData}/>
           </div>
-          <div style={styles.tableWrapper}>
-            {data ? (
-              <table style={styles.table}>
-                <thead>
-                  <tr style={styles.tableHeaderRow}>
-                    <th style={styles.tableHeader}>Region</th>
-                    <th style={styles.tableHeader}>Final Allocation (MHz)</th>
-                    <th style={styles.tableHeader}>Percentage</th>
-                    <th style={styles.tableHeader}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(data).sort((a, b) => (b[1].final || 0) - (a[1].final || 0)).map(([region, values], idx) => {
-                    const finalValue = values.final || 0;
-                    const percentage = ((finalValue / parseFloat(total)) * 100).toFixed(1);
-                    return (
-                      <tr key={idx} style={styles.tableRow}>
-                        <td style={styles.tableCell}><div style={styles.regionName}>{region}</div></td>
-                        <td style={styles.tableCell}><span style={styles.valueText}>{finalValue.toFixed(2)}</span></td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.percentageBar}>
-                            <div style={{...styles.percentageFill, width: `${percentage}%`}} />
-                            <span style={styles.percentageText}>{percentage}%</span>
-                          </div>
-                        </td>
-                        <td style={styles.tableCell}><span style={styles.statusBadge}>Active</span></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : (
-              <div style={styles.noData}>
-                <div style={styles.noDataIcon}>📊</div>
-                <div style={styles.noDataText}>No allocation data available</div>
-                <div style={styles.noDataSubtext}>Click "Run Allocation" to generate results</div>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         <div style={styles.chartBox}>
-          <div style={styles.chartHeader}><h3 style={styles.chartTitle}>Utilization</h3></div>
-          <div style={styles.utilizationContent}>
-            <div style={styles.doughnutWrapper}>
-              <div style={styles.doughnutCenter}>
-                <div style={styles.doughnutValue}>{data ? `${allocatedPercent}%` : "0%"}</div>
-                <div style={styles.doughnutLabel}>Allocated</div>
-              </div>
-              <Doughnut data={utilizationData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: "70%" }} />
-            </div>
-            <div style={styles.utilizationStats}>
-              <div style={styles.statItem}>
-                <div style={{...styles.statDot, backgroundColor: "#6366f1"}}></div>
-                <div style={styles.statContent2}>
-                  <div style={styles.statLabel}>Allocated</div>
-                  <div style={styles.statValue2}>{data ? `${allocatedSpectrum.toFixed(1)} MHz` : "0 MHz"}</div>
-                  <div style={styles.statPercent}>{data ? `${allocatedPercent}%` : "0%"}</div>
-                </div>
-              </div>
-              <div style={styles.statDivider}></div>
-              <div style={styles.statItem}>
-                <div style={{...styles.statDot, backgroundColor: "#22d3ee"}}></div>
-                <div style={styles.statContent2}>
-                  <div style={styles.statLabel}>Available</div>
-                  <div style={styles.statValue2}>{data ? `${availableSpectrum.toFixed(1)} MHz` : `${TOTAL_SPECTRUM} MHz`}</div>
-                  <div style={styles.statPercent}>{data ? `${availablePercent}%` : "100%"}</div>
-                </div>
-              </div>
-              <div style={styles.statDivider}></div>
-              <div style={styles.statItem}>
-                <div style={{...styles.statDot, backgroundColor: "#8b5cf6"}}></div>
-                <div style={styles.statContent2}>
-                  <div style={styles.statLabel}>Total Capacity</div>
-                  <div style={styles.statValue2}>{TOTAL_SPECTRUM} MHz</div>
-                  <div style={styles.statPercent}>100%</div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <h3 style={styles.chartTitle}>Utilization</h3>
+          <Doughnut data={utilizationData}/>
         </div>
       </div>
 
-      <div style={styles.chartsRow}>
-        {chartData && (
+      {/* NEW VISUALS */}
+      {/* <div style={styles.chartsRow}>
+        {beforeAfterData && (
           <div style={styles.chartBoxLarge}>
-            <div style={styles.chartHeader}>
-              <h3 style={styles.chartTitle}>Regional Allocation</h3>
-              <span style={styles.viewAll}>View All →</span>
-            </div>
-            <div style={styles.chartWrapper}>
-              <Bar data={chartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
-            </div>
+            <h3 style={styles.chartTitle}>Before vs After Allocation</h3>
+            <Bar data={beforeAfterData}/>
           </div>
-        )}
-        {topRegionsData && (
-          <div style={styles.chartBox}>
-            <div style={styles.chartHeader}><h3 style={styles.chartTitle}>Top 5 Regions</h3></div>
-            <div style={styles.chartWrapper}>
-              <Bar data={topRegionsData} options={{ indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
-            </div>
-          </div>
-        )}
-      </div>
+        )} */}
 
+        {/* {top10Data && (
+          <div style={styles.chartBox}>
+            <h3 style={styles.chartTitle}>Top 10 States</h3>
+            <Bar data={top10Data}/>
+          </div>
+        )}
+      </div> */}
+
+      {/* <div style={styles.chartsRow}>
+        {cumulativeData && (
+          <div style={styles.chartBoxLarge}>
+            <h3 style={styles.chartTitle}>Cumulative Spectrum Usage</h3>
+            <Line data={cumulativeData}/>
+          </div>
+        )}  */}
+
+        {/* {bandData && (
+          <div style={styles.chartBox}>
+            <h3 style={styles.chartTitle}>Bandwise Distribution</h3>
+            <Doughnut data={bandData}/>
+          </div>
+        )}
+      </div> */}
+
+      {/* EXISTING CHARTS */}
+<div style={styles.chartsRow}>
+  {chartData && (
+    <div style={styles.chartBoxLarge}>
+      <h3 style={styles.chartTitle}>Regional Allocation</h3>
+      <Bar key="regional" data={chartData} />
+    </div>
+  )}
+
+  <div style={styles.chartBox}>
+    <h3 style={styles.chartTitle}>Utilization</h3>
+    <Doughnut key="utilization" data={utilizationData} />
+  </div>
+</div>
+
+{/* NEW VISUALS */}
+<div style={styles.chartsRow}>
+  {beforeAfterData && (
+    <div style={styles.chartBoxLarge}>
+      <h3 style={styles.chartTitle}>Before vs After Allocation</h3>
+      <Bar key="beforeafter" data={beforeAfterData} />
+    </div>
+  )}
+
+  {top10Data && (
+    <div style={styles.chartBox}>
+      <h3 style={styles.chartTitle}>Top 10 States</h3>
+      <Bar key="top10" data={top10Data} />
+    </div>
+  )}
+</div>
+
+<div style={styles.chartsRow}>
+  {cumulativeData && (
+    <div style={styles.chartBoxLarge}>
+      <h3 style={styles.chartTitle}>Cumulative Spectrum Usage</h3>
+      <Line key="cumulative" data={cumulativeData} />
+    </div>
+  )}
+
+  {bandData && (
+    <div style={styles.chartBox}>
+      <h3 style={styles.chartTitle}>Bandwise Distribution</h3>
+      <Doughnut key="bandwise" data={bandData} />
+    </div>
+  )}
+</div>
+
+
+      {/* FOOTER */}
       <div style={styles.footer}>
-        <div style={styles.footerItem}>
-          <span style={styles.footerLabel}>Last Updated:</span>
-          <span style={styles.footerValue}>{new Date().toLocaleString()}</span>
-        </div>
-        <div style={styles.footerItem}>
-          <span style={styles.footerLabel}>Status:</span>
-          <span style={{...styles.footerValue, color: "#10b981"}}>● Active</span>
-        </div>
+        <span>Last Updated: {new Date().toLocaleString()}</span>
+        <span style={{color:"#10b981"}}>● Active</span>
       </div>
     </>
   );
 }
+
+
+// above new code
+// below old code
+// // Dashboard and other components remain the same as before
+// function DashboardView({
+//   data, loading, runAllocation, total, allocatedPercent,
+//   allocatedSpectrum, availableSpectrum, availablePercent,
+//   utilizationData, chartData, topRegionsData, TOTAL_SPECTRUM
+// }) 
+// // ===============================
+// // Extra Visualization Datasets
+// // ===============================
+
+// // Before vs After
+// const beforeAfterData = data ? {
+//   labels: Object.keys(data),
+//   datasets: [
+//     {
+//       label: "Initial (MHz)",
+//       backgroundColor: "#94a3b8",
+//       data: Object.values(data).map(v => v.initial)
+//     },
+//     {
+//       label: "Final (MHz)",
+//       backgroundColor: "#6366f1",
+//       data: Object.values(data).map(v => v.final)
+//     }
+//   ]
+// } : null;
+
+// // Cumulative Usage
+// const cumulativeData = data ? {
+//   labels: Object.keys(data),
+//   datasets: [{
+//     label: "Cumulative Spectrum Usage (MHz)",
+//     borderColor: "#22c55e",
+//     tension: 0.3,
+//     fill: false,
+//     data: Object.values(data)
+//       .map(v => v.final)
+//       .reduce((arr, x, i) => {
+//         arr.push((arr[i - 1] || 0) + x);
+//         return arr;
+//       }, [])
+//   }]
+// } : null;
+
+// // Top 10 States
+// const top10Data = data ? {
+//   labels: Object.entries(data)
+//     .sort((a,b)=>b[1].final-a[1].final)
+//     .slice(0,10)
+//     .map(([k])=>k),
+//   datasets:[{
+//     label:"Top 10 States (MHz)",
+//     backgroundColor:"#f59e0b",
+//     data:Object.entries(data)
+//       .sort((a,b)=>b[1].final-a[1].final)
+//       .slice(0,10)
+//       .map(([,v])=>v.final)
+//   }]
+// }: null;
+
+// // Bandwise Distribution
+// const bandData = data ? {
+//   labels:["Sub-6 GHz","mmWave","THz"],
+//   datasets:[{
+//     backgroundColor:["#6366f1","#22d3ee","#ec4899"],
+//     data:[
+//       allocatedSpectrum*0.5,
+//       allocatedSpectrum*0.3,
+//       allocatedSpectrum*0.2
+//     ]
+//   }]
+// }: null;
+
+// {
+//   return (
+//     <>
+//       <div style={styles.header}>
+//         <div>
+//           <h2 style={styles.title}>Spectrum Allocation Dashboard</h2>
+//           <p style={styles.subtitle}>Real-time monitoring and analytics</p>
+//         </div>
+//         <button 
+//           style={{...styles.button, opacity: loading ? 0.6 : 1}} 
+//           onClick={runAllocation}
+//           disabled={loading}
+//         >
+//           {loading ? "Running..." : "Run Allocation"}
+//         </button>
+//       </div>
+
+//       <div style={styles.cards}>
+//         <Card title="Total Spectrum" value={`${total} MHz`} percentage="+12.5%" icon="∿" iconColor="#6366f1" />
+//         <Card title="Regions" value={data ? Object.keys(data).length : "-"} percentage="+3" icon="◈" iconColor="#8b5cf6" />
+//         <Card title="Efficiency" value={data ? `${allocatedPercent}%` : "-"} percentage={data ? `${allocatedSpectrum.toFixed(0)} MHz` : "-"} icon="✦" iconColor="#10b981" />
+//         <Card title="Policy Status" value="Compliant" percentage="100%" icon="⚡" iconColor="#f59e0b" />
+//       </div>
+
+//       <div style={styles.chartsRow}>
+//         <div style={styles.chartBoxLarge}>
+//           <div style={styles.chartHeader}>
+//             <h3 style={styles.chartTitle}>Allocation Results</h3>
+//             <span style={styles.badge}>{data ? `${Object.keys(data).length} Regions` : "No Data"}</span>
+//           </div>
+//           <div style={styles.tableWrapper}>
+//             {data ? (
+//               <table style={styles.table}>
+//                 <thead>
+//                   <tr style={styles.tableHeaderRow}>
+//                     <th style={styles.tableHeader}>Region</th>
+//                     <th style={styles.tableHeader}>Final Allocation (MHz)</th>
+//                     <th style={styles.tableHeader}>Percentage</th>
+//                     <th style={styles.tableHeader}>Status</th>
+//                   </tr>
+//                 </thead>
+//                 <tbody>
+//                   {Object.entries(data).sort((a, b) => (b[1].final || 0) - (a[1].final || 0)).map(([region, values], idx) => {
+//                     const finalValue = values.final || 0;
+//                     const percentage = ((finalValue / parseFloat(total)) * 100).toFixed(1);
+//                     return (
+//                       <tr key={idx} style={styles.tableRow}>
+//                         <td style={styles.tableCell}><div style={styles.regionName}>{region}</div></td>
+//                         <td style={styles.tableCell}><span style={styles.valueText}>{finalValue.toFixed(2)}</span></td>
+//                         <td style={styles.tableCell}>
+//                           <div style={styles.percentageBar}>
+//                             <div style={{...styles.percentageFill, width: `${percentage}%`}} />
+//                             <span style={styles.percentageText}>{percentage}%</span>
+//                           </div>
+//                         </td>
+//                         <td style={styles.tableCell}><span style={styles.statusBadge}>Active</span></td>
+//                       </tr>
+//                     );
+//                   })}
+//                 </tbody>
+//               </table>
+//             ) : (
+//               <div style={styles.noData}>
+//                 <div style={styles.noDataIcon}>📊</div>
+//                 <div style={styles.noDataText}>No allocation data available</div>
+//                 <div style={styles.noDataSubtext}>Click "Run Allocation" to generate results</div>
+//               </div>
+//             )}
+//           </div>
+//         </div>
+
+//         <div style={styles.chartBox}>
+//           <div style={styles.chartHeader}><h3 style={styles.chartTitle}>Utilization</h3></div>
+//           <div style={styles.utilizationContent}>
+//             <div style={styles.doughnutWrapper}>
+//               <div style={styles.doughnutCenter}>
+//                 <div style={styles.doughnutValue}>{data ? `${allocatedPercent}%` : "0%"}</div>
+//                 <div style={styles.doughnutLabel}>Allocated</div>
+//               </div>
+//               <Doughnut data={utilizationData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: "70%" }} />
+//             </div>
+//             <div style={styles.utilizationStats}>
+//               <div style={styles.statItem}>
+//                 <div style={{...styles.statDot, backgroundColor: "#6366f1"}}></div>
+//                 <div style={styles.statContent2}>
+//                   <div style={styles.statLabel}>Allocated</div>
+//                   <div style={styles.statValue2}>{data ? `${allocatedSpectrum.toFixed(1)} MHz` : "0 MHz"}</div>
+//                   <div style={styles.statPercent}>{data ? `${allocatedPercent}%` : "0%"}</div>
+//                 </div>
+//               </div>
+//               <div style={styles.statDivider}></div>
+//               <div style={styles.statItem}>
+//                 <div style={{...styles.statDot, backgroundColor: "#22d3ee"}}></div>
+//                 <div style={styles.statContent2}>
+//                   <div style={styles.statLabel}>Available</div>
+//                   <div style={styles.statValue2}>{data ? `${availableSpectrum.toFixed(1)} MHz` : `${TOTAL_SPECTRUM} MHz`}</div>
+//                   <div style={styles.statPercent}>{data ? `${availablePercent}%` : "100%"}</div>
+//                 </div>
+//               </div>
+//               <div style={styles.statDivider}></div>
+//               <div style={styles.statItem}>
+//                 <div style={{...styles.statDot, backgroundColor: "#8b5cf6"}}></div>
+//                 <div style={styles.statContent2}>
+//                   <div style={styles.statLabel}>Total Capacity</div>
+//                   <div style={styles.statValue2}>{TOTAL_SPECTRUM} MHz</div>
+//                   <div style={styles.statPercent}>100%</div>
+//                 </div>
+//               </div>
+//             </div>
+//           </div>
+//         </div>
+//       </div>
+
+//       <div style={styles.chartsRow}>
+//         {chartData && (
+//           <div style={styles.chartBoxLarge}>
+//             <div style={styles.chartHeader}>
+//               <h3 style={styles.chartTitle}>Regional Allocation</h3>
+//               <span style={styles.viewAll}>View All →</span>
+//             </div>
+//             <div style={styles.chartWrapper}>
+//               <Bar data={chartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
+//             </div>
+//           </div>
+//         )}
+//         {topRegionsData && (
+//           <div style={styles.chartBox}>
+//             <div style={styles.chartHeader}><h3 style={styles.chartTitle}>Top 5 Regions</h3></div>
+//             <div style={styles.chartWrapper}>
+//               <Bar data={topRegionsData} options={{ indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
+//             </div>
+//           </div>
+//         )}
+//       </div>
+
+//       <div style={styles.footer}>
+//         <div style={styles.footerItem}>
+//           <span style={styles.footerLabel}>Last Updated:</span>
+//           <span style={styles.footerValue}>{new Date().toLocaleString()}</span>
+//         </div>
+//         <div style={styles.footerItem}>
+//           <span style={styles.footerLabel}>Status:</span>
+//           <span style={{...styles.footerValue, color: "#10b981"}}>● Active</span>
+//         </div>
+//       </div>
+//     </>
+//   );
+// }
 
 function Sidebar({ activeTab, setActiveTab }) {
   const navItems = [
