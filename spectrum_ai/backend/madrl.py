@@ -121,7 +121,7 @@ def run_madrl():
     current_spectrum = torch.tensor(init_vals, device=DEVICE)
     initial_spectrum = current_spectrum.clone()
 
-    EPISODES = 25
+    EPISODES = 5000
     GAMMA = 0.96
 
     for ep in range(EPISODES):
